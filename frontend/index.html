@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinGraph AI · Financial Intelligence Workspace</title>
+<style>
+  :root { --bg:#0f172a; --panel:#111c33; --line:#23314f; --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
+  nav { width:220px; background:#0b1326; border-right:1px solid var(--line); padding:20px 14px; flex-shrink:0; }
+  nav h1 { font-size:18px; margin:0 0 4px; } nav p { color:var(--muted); font-size:12px; margin:0 0 24px; }
+  nav button { display:block; width:100%; text-align:left; background:none; border:0; color:var(--muted); padding:10px 12px; border-radius:8px; cursor:pointer; font-size:14px; margin-bottom:4px; }
+  nav button.active, nav button:hover { background:var(--panel); color:var(--text); }
+  main { flex:1; padding:24px 28px; overflow:auto; max-width:1400px; }
+  h2 { margin:0 0 16px; font-size:22px; } h3 { font-size:15px; margin:20px 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+  .stat .value { font-size:28px; font-weight:600; } .stat .label { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .b-ready { background:rgba(52,211,153,.15); color:var(--ok); } .b-processing, .b-uploaded { background:rgba(251,191,36,.15); color:var(--warn); }
+  .b-failed { background:rgba(248,113,113,.15); color:var(--bad); } .b-high { color:var(--bad); } .b-medium { color:var(--warn); } .b-low { color:var(--muted); }
+  button.primary, .btn { background:var(--accent); color:#06202e; border:0; border-radius:8px; padding:9px 14px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; font-size:14px; }
+  button.danger { background:transparent; color:var(--bad); border:1px solid var(--line); border-radius:8px; padding:5px 10px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  input[type=text], input[type=file], textarea, select { background:#0b1326; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font-size:14px; }
+  textarea { width:100%; min-height:120px; font-family: ui-monospace, Menlo, monospace; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .muted { color:var(--muted); font-size:13px; }
+  .empty { color:var(--muted); padding:24px; text-align:center; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { background:rgba(248,113,113,.12); border:1px solid var(--bad); color:#fecaca; padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:14px; }
+  .chat { display:flex; flex-direction:column; gap:12px; min-height:380px; max-height:60vh; overflow:auto; padding-right:6px; }
+  .msg { padding:12px 14px; border-radius:12px; max-width:85%; white-space:pre-wrap; line-height:1.5; }
+  .msg.user { background:#1e3a5f; align-self:flex-end; } .msg.assistant { background:var(--panel); border:1px solid var(--line); align-self:flex-start; }
+  .cite { border-left:3px solid var(--accent); background:#0b1326; padding:8px 10px; margin-top:8px; border-radius:6px; font-size:13px; }
+  .layout2 { display:grid; grid-template-columns: 1fr 320px; gap:16px; }
+  #graphbox { height:560px; background:#0b1326; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; margin-right:14px; font-size:13px; color:var(--muted); }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:22px; text-align:center; color:var(--muted); }
+  .drop.over { border-color:var(--accent); color:var(--text); }
+</style>
+</head>
+<body>
+<nav>
+  <h1>FinGraph AI</h1>
+  <p id="llmstatus">Checking…</p>
+  <button data-view="dashboard" class="active">Dashboard</button>
+  <button data-view="library">Document library</button>
+  <button data-view="graph">Knowledge graph</button>
+  <button data-view="ask">Wiki Ask</button>
+  <button data-view="finance">Financials</button>
+  <button data-view="debug">RAG debug &amp; monitoring</button>
+</nav>
+<main id="app"></main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const app = $("#app");
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (n) => (n === null || n === undefined) ? "–" : Number(n).toLocaleString(undefined, {maximumFractionDigits: 2});
+let current = "dashboard", pollTimer = null;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const body = res.headers.get("content-type")?.includes("json") ? await res.json() : await res.text();
+  if (!res.ok) throw new Error(body?.detail || body || res.statusText);
+  return body;
+}
+function showError(container, err) {
+  container.insertAdjacentHTML("afterbegin", `<div class="error">${esc(err.message || err)}</div>`);
+}
+function loading(text = "Loading…") { return `<div class="empty"><span class="spinner"></span>${esc(text)}</div>`; }
+function badge(status) { return `<span class="badge b-${esc(status)}">${status === "processing" ? '<span class="spinner"></span>' : ""}${esc(status)}</span>`; }
+
+function go(view) {
+  current = view;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  clearInterval(pollTimer);
+  ({dashboard, library, graph, ask, finance, debug})[view]();
+}
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
+
+// ---------- dashboard ----------
+async function dashboard() {
+  app.innerHTML = `<h2>Dashboard</h2>` + loading("Loading dashboard…");
+  try {
+    const d = await api("/api/dashboard");
+    app.innerHTML = `
+      <h2>Dashboard</h2>
+      <div class="grid">
+        ${stat(d.documents, "Documents")}${stat(d.status_counts.ready, "Ready")}${stat(d.chunks, "Indexed chunks")}
+        ${stat(d.graph.nodes, "Graph entities")}${stat(d.graph.edges, "Graph relations")}${stat(d.anomalies, "Anomalies flagged")}
+      </div>
+      <h3>Key findings</h3>
+      <div class="card">${d.key_findings.length ? d.key_findings.map((f) => `<div style="margin-bottom:8px">• ${esc(f)}</div>`).join("") : '<div class="empty">Upload financial documents to see findings.</div>'}</div>
+      <h3>Recent anomalies</h3>
+      <div class="card">${anomalyList(d.recent_anomalies)}</div>`;
+  } catch (e) { showError(app, e); }
+}
+const stat = (v, l) => `<div class="card stat"><div class="value">${fmt(v)}</div><div class="label">${esc(l)}</div></div>`;
+function anomalyList(list) {
+  if (!list.length) return '<div class="empty">No anomalies detected.</div>';
+  return list.map((a) => `<div style="margin-bottom:10px"><span class="b-${esc(a.severity)} badge">${esc(a.severity)}</span> <strong>${esc(a.type)}</strong><div class="muted">${esc(a.detail)} · ${esc((a.documents || []).join(", "))}</div></div>`).join("");
+}
+
+// ---------- document library ----------
+async function library() {
+  app.innerHTML = `
+    <h2>Document library</h2>
+    <div class="card">
+      <div class="drop" id="drop">Drag PDF, DOCX, JPG or PNG files here, or
+        <input type="file" id="file" multiple accept=".pdf,.docx,.jpg,.jpeg,.png"></div>
+      <div class="muted" style="margin-top:8px">Scanned pages and images are read with OCR. Max 25 MB per file.</div>
+      <div id="uploadStatus" class="muted"></div>
+    </div>
+    <div class="card" id="docs">${loading()}</div>`;
+  const drop = $("#drop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files); });
+  $("#file").addEventListener("change", (e) => upload(e.target.files));
+  await refreshDocs();
+}
+async function upload(files) {
+  for (const file of files) {
+    $("#uploadStatus").innerHTML = `<span class="spinner"></span>Uploading ${esc(file.name)}…`;
+    const form = new FormData();
+    form.append("file", file);
+    try { await api("/api/documents", { method: "POST", body: form }); }
+    catch (e) { showError($("#docs"), `${file.name}: ${e.message}`); }
+  }
+  $("#uploadStatus").textContent = "";
+  await refreshDocs();
+}
+async function refreshDocs() {
+  if (current !== "library") return;
+  const box = $("#docs");
+  try {
+    const docs = await api("/api/documents");
+    box.innerHTML = docs.length ? `<table><thead><tr><th>File</th><th>Status</th><th>Pages</th><th>Chunks</th><th>OCR pages</th><th>Uploaded</th><th></th></tr></thead><tbody>
+      ${docs.map((d) => `<tr>
+        <td>${esc(d.filename)}${d.error ? `<div class="error" style="margin-top:6px">${esc(d.error)}</div>` : ""}</td>
+        <td>${badge(d.status)}</td><td>${fmt(d.pages)}</td><td>${fmt(d.chunk_count)}</td><td>${fmt(d.ocr_pages)}</td>
+        <td class="muted">${esc(d.created_at.replace("T", " ").slice(0, 16))}</td>
+        <td><button class="danger" data-id="${esc(d.id)}" data-name="${esc(d.filename)}" onclick="removeDoc(this.dataset.id, this.dataset.name)">Remove</button></td></tr>`).join("")}
+      </tbody></table>` : '<div class="empty">No documents yet. Upload a file to start.</div>';
+    const busy = docs.some((d) => d.status === "processing" || d.status === "uploaded");
+    if (busy) pollTimer = setTimeout(refreshDocs, 1500);
+  } catch (e) { showError(box, e); }
+}
+async function removeDoc(id, name) {
+  if (!confirm(`Remove "${name}" from the knowledge base? Its graph facts and metrics are removed too.`)) return;
+  try { await api(`/api/documents/${id}`, { method: "DELETE" }); await refreshDocs(); }
+  catch (e) { showError($("#docs"), e); }
+}
+window.removeDoc = removeDoc;
+
+// ---------- knowledge graph (force-directed layout in SVG) ----------
+const TYPE_COLORS = { Company: "#38bdf8", Vendor: "#a78bfa", Invoice: "#fbbf24", Transaction: "#34d399", ReportingPeriod: "#f472b6", Document: "#94a3b8" };
+async function graph() {
+  app.innerHTML = `
+    <h2>Knowledge graph</h2>
+    <div class="row" style="margin-bottom:12px"><select id="gdoc"><option value="">All documents</option></select>
+      <div class="legend">${Object.entries(TYPE_COLORS).map(([t, c]) => `<span><i class="dot" style="background:${c}"></i>${t}</span>`).join("")}</div></div>
+    <div class="layout2"><div id="graphbox">${loading()}</div><div class="card" id="detail"><div class="empty">Click an entity to see its connections and supporting documents.</div></div></div>`;
+  try {
+    const docs = await api("/api/documents");
+    $("#gdoc").innerHTML += docs.filter((d) => d.status === "ready").map((d) => `<option value="${esc(d.id)}">${esc(d.filename)}</option>`).join("");
+    $("#gdoc").addEventListener("change", (e) => drawGraph(e.target.value));
+    drawGraph("");
+  } catch (e) { showError(app, e); }
+}
+async function drawGraph(docId) {
+  const box = $("#graphbox");
+  try {
+    const data = await api("/api/graph" + (docId ? `?doc_id=${encodeURIComponent(docId)}` : ""));
+    if (!data.nodes.length) { box.innerHTML = '<div class="empty" style="padding-top:240px">No entities yet. Upload financial documents.</div>'; return; }
+    box.innerHTML = "";
+    const W = box.clientWidth || 800, H = 560;
+    const nodes = data.nodes.map((n, i) => ({ ...n, x: W / 2 + Math.cos(i) * 180 + Math.random() * 20, y: H / 2 + Math.sin(i) * 180 + Math.random() * 20, vx: 0, vy: 0 }));
+    const index = Object.fromEntries(nodes.map((n) => [n.id, n]));
+    const links = data.edges.map((e) => ({ s: index[e.source], t: index[e.target], label: e.relation })).filter((l) => l.s && l.t);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100%"); svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    box.appendChild(svg);
+    const ns = "http://www.w3.org/2000/svg";
+    const lineEls = links.map((l) => { const el = document.createElementNS(ns, "line"); el.setAttribute("stroke", "#334155"); svg.appendChild(el); return el; });
+    const nodeEls = nodes.map((n) => {
+      const g = document.createElementNS(ns, "g"); g.style.cursor = "pointer";
+      const c = document.createElementNS(ns, "circle"); c.setAttribute("r", 14); c.setAttribute("fill", TYPE_COLORS[n.type] || "#64748b"); c.setAttribute("stroke", "#0f172a"); c.setAttribute("stroke-width", 2);
+      const t = document.createElementNS(ns, "text"); t.textContent = n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label;
+      t.setAttribute("font-size", 11); t.setAttribute("fill", "#e2e8f0"); t.setAttribute("dx", 18); t.setAttribute("dy", 4);
+      g.append(c, t); svg.appendChild(g);
+      g.addEventListener("click", () => showNode(n.id));
+      return g;
+    });
+    let ticks = 0;
+    const step = () => {
+      for (const a of nodes) for (const b of nodes) if (a !== b) {
+        const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 0.01, f = 900 / d2;
+        a.vx += dx * f * 0.01; a.vy += dy * f * 0.01;
+      }
+      for (const l of links) {
+        const dx = l.t.x - l.s.x, dy = l.t.y - l.s.y, d = Math.sqrt(dx * dx + dy * dy) || 1, f = (d - 120) * 0.02;
+        l.s.vx += dx / d * f; l.s.vy += dy / d * f; l.t.vx -= dx / d * f; l.t.vy -= dy / d * f;
+      }
+      for (const n of nodes) {
+        n.vx += (W / 2 - n.x) * 0.002; n.vy += (H / 2 - n.y) * 0.002;
+        n.x = Math.max(20, Math.min(W - 20, n.x + n.vx)); n.y = Math.max(20, Math.min(H - 20, n.y + n.vy));
+        n.vx *= 0.85; n.vy *= 0.85;
+      }
+      links.forEach((l, i) => { const el = lineEls[i]; el.setAttribute("x1", l.s.x); el.setAttribute("y1", l.s.y); el.setAttribute("x2", l.t.x); el.setAttribute("y2", l.t.y); });
+      nodes.forEach((n, i) => nodeEls[i].setAttribute("transform", `translate(${n.x},${n.y})`));
+      if (++ticks < 300) requestAnimationFrame(step);
+    };
+    step();
+  } catch (e) { showError(box, e); }
+}
+async function showNode(id) {
+  const detail = $("#detail");
+  detail.innerHTML = loading("Loading entity…");
+  try {
+    const d = await api(`/api/graph/nodes/${encodeURIComponent(id)}`);
+    detail.innerHTML = `
+      <div class="muted">${esc(d.node.type)}</div><h3 style="color:var(--text);text-transform:none;font-size:17px;margin-top:4px">${esc(d.node.label)}</h3>
+      <h3>Connections</h3>${d.connections.length ? d.connections.map((c) => `<div style="margin-bottom:8px;font-size:13px"><strong>${esc(c.relation)}</strong> ${c.source === id ? "→" : "←"} <span class="muted">${esc(c.source === id ? c.target : c.source)}</span><div class="muted">${esc(c.filename)}${c.page ? `, p.${c.page}` : ""}</div></div>`).join("") : '<div class="muted">No connections.</div>'}
+      <h3>Supporting documents</h3>${d.supporting_documents.map((s) => `<div class="cite"><strong>${esc(s.filename)}</strong>${s.page ? ` · page ${s.page}` : ""}<br>${esc(s.evidence || "")}</div>`).join("") || '<div class="muted">None.</div>'}`;
+  } catch (e) { showError(detail, e); }
+}
+
+// ---------- Wiki Ask ----------
+let convId = null;
+async function ask() {
+  app.innerHTML = `
+    <h2>Wiki Ask</h2>
+    <div class="layout2" style="grid-template-columns:220px 1fr">
+      <div class="card" id="convs" style="align-self:start">${loading()}</div>
+      <div class="card">
+        <div class="chat" id="chat"><div class="empty">Ask a question about your uploaded documents.</div></div>
+        <div class="row" style="margin-top:14px"><input type="text" id="q" style="flex:1" placeholder="e.g. What was total revenue in FY 2025, and how does it compare to Q1 2026?" maxlength="2000">
+          <button class="primary" id="send">Ask</button></div>
+      </div>
+    </div>`;
+  $("#send").addEventListener("click", send);
+  $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+  await loadConversations();
+  if (convId) await openConversation(convId);
+}
+async function loadConversations() {
+  try {
+    const list = await api("/api/conversations");
+    $("#convs").innerHTML = `<div class="row" style="justify-content:space-between"><strong>Chats</strong><button class="btn" onclick="newChat()">New</button></div>` +
+      (list.map((c) => `<div style="margin-top:8px"><a href="#" onclick="openConversation('${esc(c.id)}');return false" style="color:${c.id === convId ? "var(--accent)" : "var(--text)"};font-size:14px">${esc(c.title)}</a></div>`).join("") || '<div class="muted" style="margin-top:8px">No chats yet.</div>');
+  } catch (e) { showError($("#convs"), e); }
+}
+function newChat() { convId = null; $("#chat").innerHTML = '<div class="empty">New conversation. Ask about your documents.</div>'; loadConversations(); }
+async function openConversation(id) {
+  convId = id;
+  $("#chat").innerHTML = loading("Loading conversation…");
+  try {
+    const conv = await api(`/api/conversations/${id}`);
+    $("#chat").innerHTML = conv.messages.map(renderMessage).join("");
+    $("#chat").scrollTop = 1e9;
+    loadConversations();
+  } catch (e) { showError($("#chat"), e); }
+}
+function renderMessage(m) {
+  const cites = (m.citations || []).map((c) => `<div class="cite"><strong>[${esc(c.ref)}] ${esc(c.filename)}</strong> · page ${esc(c.page)} · relevance ${fmt(c.score)}<br>${esc(c.excerpt)}</div>`).join("");
+  return `<div class="msg ${m.role}">${esc(m.content)}${cites}</div>`;
+}
+async function send() {
+  const input = $("#q"), text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  const chat = $("#chat");
+  if (chat.querySelector(".empty")) chat.innerHTML = "";
+  chat.insertAdjacentHTML("beforeend", renderMessage({ role: "user", content: text }) + `<div class="msg assistant" id="pending"><span class="spinner"></span>Searching your documents…</div>`);
+  chat.scrollTop = 1e9;
+  $("#send").disabled = true;
+  try {
+    const res = await api("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, conversation_id: convId }) });
+    convId = res.conversation_id;
+    $("#pending").outerHTML = renderMessage({ role: "assistant", content: res.answer, citations: res.citations });
+    loadConversations();
+  } catch (e) {
+    $("#pending").outerHTML = `<div class="error">${esc(e.message)}</div>`;
+  } finally { $("#send").disabled = false; chat.scrollTop = 1e9; }
+}
+window.newChat = newChat; window.openConversation = openConversation;
+
+// ---------- financials ----------
+async function finance() {
+  app.innerHTML = `
+    <h2>Financial intelligence</h2>
+    <div class="row" style="margin-bottom:16px">
+      <a class="btn" href="/api/report.md" target="_blank">Export Markdown report</a>
+      <a class="btn" href="/api/report.csv">Export metrics CSV</a>
+    </div>
+    <div class="layout2">
+      <div>
+        <h3>Extracted metrics</h3><div class="card" id="metrics">${loading()}</div>
+        <h3>Compare a metric across documents</h3>
+        <div class="card"><div class="row"><input type="text" id="cmetric" value="total revenue" placeholder="metric, e.g. net income">
+          <button class="primary" id="cbtn">Compare</button></div><div id="cresult" style="margin-top:12px"></div></div>
+        <h3>Transactions</h3><div class="card" id="txns">${loading()}</div>
+      </div>
+      <div>
+        <h3>Calculator</h3>
+        <div class="card"><div class="row"><input type="text" id="expr" placeholder="e.g. (250000 - 190000) / 250000 * 100" style="flex:1"><button class="primary" id="calc">Calculate</button></div>
+          <div id="calcresult" class="muted" style="margin-top:10px"></div></div>
+        <h3>Anomalies</h3><div class="card" id="anoms">${loading()}</div>
+        <h3>Summary</h3><div class="card" id="summary">${loading()}</div>
+      </div>
+    </div>`;
+  $("#cbtn").addEventListener("click", compareMetric);
+  $("#calc").addEventListener("click", calculate);
+  try {
+    const [m, t, a, s] = await Promise.all([api("/api/metrics"), api("/api/transactions"), api("/api/anomalies"), api("/api/summary")]);
+    $("#metrics").innerHTML = m.length ? `<table><thead><tr><th>Document</th><th>Metric</th><th>Value</th><th>Page</th></tr></thead><tbody>${m.map((r) => `<tr><td>${esc(r.filename)}</td><td>${esc(r.name)}</td><td>${fmt(r.value)}</td><td>${r.page}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No metrics extracted yet.</div>';
+    $("#txns").innerHTML = t.length ? `<table><thead><tr><th>Date</th><th>Description</th><th>Counterparty</th><th>Amount</th></tr></thead><tbody>${t.map((r) => `<tr><td>${esc(r.occurred_on)}</td><td>${esc(r.description)}</td><td>${esc(r.counterparty)}</td><td>${fmt(r.amount)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">No transactions found.</div>';
+    $("#anoms").innerHTML = anomalyList(a);
+    $("#summary").innerHTML = (s.key_findings.map((f) => `<div style="margin-bottom:8px">• ${esc(f)}</div>`).join("") || '<div class="muted">No findings yet.</div>') + (s.narrative ? `<hr style="border-color:var(--line)"><div>${esc(s.narrative)}</div>` : "");
+  } catch (e) { showError(app, e); }
+}
+async function compareMetric() {
+  const out = $("#cresult");
+  out.innerHTML = loading();
+  try {
+    const res = await api(`/api/compare?metric=${encodeURIComponent($("#cmetric").value.trim())}`);
+    out.innerHTML = `<table><thead><tr><th>Document</th><th>Value</th><th>vs first</th><th>vs previous</th></tr></thead><tbody>${res.rows.map((r) => `<tr><td>${esc(r.document)}</td><td>${fmt(r.value)}</td><td>${r.change_vs_first_pct ?? "–"}%</td><td>${r.change_vs_previous_pct ?? "–"}%</td></tr>`).join("")}</tbody></table>`;
+  } catch (e) { out.innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+}
+async function calculate() {
+  const out = $("#calcresult");
+  try {
+    const res = await api("/api/calculate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expression: $("#expr").value }) });
+    out.textContent = `= ${fmt(res.result)}`;
+  } catch (e) { out.innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+
+// ---------- RAG debug and monitoring ----------
+async function debug() {
+  app.innerHTML = `
+    <h2>RAG debug &amp; monitoring</h2>
+    <div class="card">
+      <h3 style="margin-top:0">Retrieval playground</h3>
+      <div class="row"><input type="text" id="sq" style="flex:1" placeholder="Enter a query to see retrieved chunks and scores"><button class="primary" id="sbtn">Retrieve</button></div>
+      <div id="sres" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Retrieval evaluation</h3>
+      <div class="muted" style="margin-bottom:8px">JSON list of cases. expected_document null means the system should abstain.</div>
+      <textarea id="cases">[
+  {"question": "What was total revenue in FY 2025?", "expected_document": "annual_statement_delta_fy2025.pdf"},
+  {"question": "Which vendor issued invoice INV-2026-014?", "expected_document": "scanned_invoice_sahara_mar2026.png"},
+  {"question": "What is the payment term for late payments?", "expected_document": "vendor_agreement_nile_cloud.docx"},
+  {"question": "What is the weather in Cairo?", "expected_document": null}
+]</textarea>
+      <div class="row" style="margin-top:8px"><button class="primary" id="ebtn">Run evaluation</button></div>
+      <div id="eres" style="margin-top:12px"></div>
+    </div>
+    <div class="card" id="mon">${loading("Loading monitoring…")}</div>`;
+  $("#sq").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#sbtn").click(); });
+  $("#sbtn").addEventListener("click", runSearch);
+  $("#ebtn").addEventListener("click", runEval);
+  loadMonitoring();
+}
+async function runSearch() {
+  const out = $("#sres");
+  out.innerHTML = loading();
+  try {
+    const res = await api("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: $("#sq").value }) });
+    out.innerHTML = `<div class="muted" style="margin-bottom:8px">${res.results.length} chunks · ${res.latency_ms} ms ${res.insufficient ? "· <span style='color:var(--warn)'>insufficient context</span>" : ""}</div>
+      <table><thead><tr><th>#</th><th>Document</th><th>Page</th><th>Vector</th><th>BM25</th><th>RRF</th><th>Rerank</th><th>Final</th><th>Text</th></tr></thead><tbody>
+      ${res.results.map((r) => `<tr><td>${r.rank}</td><td>${esc(r.filename)}</td><td>${r.page}</td><td>${fmt(r.vector_score)}</td><td>${fmt(r.bm25_score)}</td><td>${fmt(r.rrf_score)}</td><td>${fmt(r.rerank_score)}</td><td><strong>${fmt(r.final_score)}</strong></td><td class="muted">${esc(r.text.slice(0, 160))}…</td></tr>`).join("")}</tbody></table>`;
+  } catch (e) { out.innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+}
+async function runEval() {
+  const out = $("#eres");
+  out.innerHTML = loading("Running evaluation…");
+  try {
+    const cases = JSON.parse($("#cases").value);
+    const r = await api("/api/eval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cases }) });
+    out.innerHTML = `<div class="grid" style="margin-bottom:12px">${stat(r.hit_rate_at_k, "Hit rate @" + r.k)}${stat(r.mrr, "MRR")}${stat(r.abstention_accuracy, "Abstention accuracy")}</div>
+      <table><thead><tr><th>Question</th><th>Expected</th><th>Rank / top</th><th>Pass</th></tr></thead><tbody>
+      ${r.cases.map((c) => `<tr><td>${esc(c.question)}</td><td>${esc(c.expected ?? "(abstain)")}</td><td>${c.expected ? (c.rank ?? "miss") : (c.abstained ? "abstained" : "answered")}</td><td>${c.passed ? "✓" : "✗"}</td></tr>`).join("")}</tbody></table>`;
+  } catch (e) { out.innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+}
+async function loadMonitoring() {
+  const box = $("#mon");
+  try {
+    const m = await api("/api/monitoring");
+    box.innerHTML = `<h3 style="margin-top:0">Monitoring</h3><div class="grid">${stat(m.queries_recorded, "Queries recorded")}${stat(m.avg_latency_ms, "Avg latency (ms)")}${stat(m.p95_latency_ms, "p95 latency (ms)")}${stat(m.insufficient_rate, "Insufficient rate")}</div>
+      <table style="margin-top:12px"><thead><tr><th>When</th><th>Kind</th><th>Query</th><th>Results</th><th>Latency</th></tr></thead><tbody>
+      ${m.recent.map((r) => `<tr><td class="muted">${esc(r.created_at.replace("T", " ").slice(0, 19))}</td><td>${esc(r.kind)}</td><td>${esc(r.query)}</td><td>${r.results}</td><td>${fmt(r.latency_ms)} ms</td></tr>`).join("")}</tbody></table>`;
+  } catch (e) { showError(box, e); }
+}
+
+// ---------- startup ----------
+(async () => {
+  try {
+    const h = await api("/api/health");
+    $("#llmstatus").textContent = h.llm_available ? `LLM: ${h.chat_model}` : "Offline mode (no API key)";
+  } catch { $("#llmstatus").textContent = "Backend unreachable"; }
+  go("dashboard");
+})();
+</script>
+</body>
+</html>
